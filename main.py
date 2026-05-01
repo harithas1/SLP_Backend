@@ -13,7 +13,7 @@ app = FastAPI()
 # ✅ FRONTEND URLS
 origins = [
     "http://localhost:5173",
-    "https://slp-yw6v.vercel.app",
+    "https://srilakshyapublications.netlify.app"
 ]
 
 app.add_middleware(
