@@ -20,8 +20,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "https://srilakshyapublications.netlify.app",
-        "https://phh.support",
-        "https://www.phh.support"
+        "https://srilakshyapublications.in",
+        "https://www.srilakshyapublications.in"
     ],
     allow_credentials=True,
     allow_methods=["*"],
