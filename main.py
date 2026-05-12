@@ -19,7 +19,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "https://srilakshyapublications.netlify.app",
-        "https://phh.suppor"
+        "https://phh.suppor",
+        "https://www.phh.support"
     ],
     allow_credentials=True,
     allow_methods=["*"],
