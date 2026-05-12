@@ -36,16 +36,28 @@ class OrderData(BaseModel):
 @app.post("/create-order")
 def create_order(data: OrderData):
 
-    order = client.order.create({
-        "amount": data.amount * 100,
-        "currency": "INR",
-        "payment_capture": 1
-    })
+    try:
+        print("KEY ID:", os.getenv("RAZORPAY_KEY_ID"))
+        print("KEY SECRET:", os.getenv("RAZORPAY_KEY_SECRET"))
 
-    return {
-        "order_id": order["id"]
-    }
+        order = client.order.create({
+            "amount": data.amount * 100,
+            "currency": "INR",
+            "payment_capture": 1
+        })
 
+        return {
+            "success": True,
+            "order_id": order["id"]
+        }
+
+    except Exception as e:
+        print("RAZORPAY ERROR:", str(e))
+
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 
