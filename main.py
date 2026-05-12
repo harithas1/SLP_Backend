@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -19,7 +20,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "https://srilakshyapublications.netlify.app",
-        "https://phh.suppor",
+        "https://phh.support",
         "https://www.phh.support"
     ],
     allow_credentials=True,
