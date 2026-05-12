@@ -4,6 +4,9 @@ from pydantic import BaseModel
 
 import razorpay
 import os
+import hmac
+import hashlib
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,6 +33,10 @@ client = razorpay.Client(
     )
 )
 
+# =========================
+# CREATE ORDER
+# =========================
+
 class OrderData(BaseModel):
     amount: int
 
@@ -37,9 +44,6 @@ class OrderData(BaseModel):
 def create_order(data: OrderData):
 
     try:
-        print("KEY ID:", os.getenv("RAZORPAY_KEY_ID"))
-        print("KEY SECRET:", os.getenv("RAZORPAY_KEY_SECRET"))
-
         order = client.order.create({
             "amount": data.amount * 100,
             "currency": "INR",
@@ -52,55 +56,49 @@ def create_order(data: OrderData):
         }
 
     except Exception as e:
-        print("RAZORPAY ERROR:", str(e))
-
         return {
             "success": False,
             "error": str(e)
         }
 
+# =========================
+# VERIFY PAYMENT
+# =========================
 
+class VerifyData(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
 
+@app.post("/verify-payment")
+def verify_payment(data: VerifyData):
 
+    try:
+        body = (
+            data.razorpay_order_id
+            + "|"
+            + data.razorpay_payment_id
+        )
 
+        expected_signature = hmac.new(
+            bytes(os.getenv("RAZORPAY_KEY_SECRET"), "utf-8"),
+            bytes(body, "utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
+        if expected_signature == data.razorpay_signature:
+            return {
+                "success": True,
+                "message": "Payment verified"
+            }
 
+        return {
+            "success": False,
+            "message": "Invalid signature"
+        }
 
-# from fastapi import FastAPI
-# from fastapi.middleware.cors import CORSMiddleware
-# from routes import category, product, order
-# import cloudinary
-# import cloudinary.uploader
-# from dotenv import load_dotenv
-# import os
-#
-# load_dotenv()
-#
-# app = FastAPI()
-#
-# # ✅ FRONTEND URLS
-# origins = [
-#     "http://localhost:5173",
-#     "https://srilakshyapublications.netlify.app"
-# ]
-#
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=origins,
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-#
-# # ✅ CLOUDINARY
-# cloudinary.config(
-#     cloud_name=os.getenv("CLOUD_NAME"),
-#     api_key=os.getenv("CLOUD_API_KEY"),
-#     api_secret=os.getenv("CLOUD_API_SECRET"),
-#     secure=True,
-# )
-#
-# # ✅ ROUTES
-# app.include_router(category.router)
-# app.include_router(product.router)
-# app.include_router(order.router)
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
