@@ -184,34 +184,34 @@ def get_orders():
             "error": str(e)
         }
 
-    class UpdateStatusData(BaseModel):
-        order_id: str
-        orderStatus: str
+class UpdateStatusData(BaseModel):
+    order_id: str
+    orderStatus: str
 
-    @app.put("/update-order-status")
-    def update_order_status(data: UpdateStatusData):
+@app.put("/update-order-status")
+def update_order_status(data: UpdateStatusData):
 
-        try:
+    try:
 
-            from bson import ObjectId
+        from bson import ObjectId
 
-            orders_collection.update_one(
-                {"_id": ObjectId(data.order_id)},
-                {
-                    "$set": {
-                        "orderStatus": data.orderStatus
-                    }
+        orders_collection.update_one(
+            {"_id": ObjectId(data.order_id)},
+            {
+                "$set": {
+                    "orderStatus": data.orderStatus
                 }
-            )
-
-            return {
-                "success": True,
-                "message": "Status updated"
             }
+        )
 
-        except Exception as e:
+        return {
+            "success": True,
+            "message": "Status updated"
+        }
 
-            return {
-                "success": False,
-                "error": str(e)
-            }
+    except Exception as e:
+
+        return {
+            "success": False,
+            "error": str(e)
+        }
