@@ -47,6 +47,10 @@ client = razorpay.Client(
 class OrderData(BaseModel):
     amount: int
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 @app.post("/create-order")
 def create_order(data: OrderData):
 
