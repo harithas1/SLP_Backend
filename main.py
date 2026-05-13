@@ -157,3 +157,61 @@ def save_order(data: SaveOrderData):
             "success": False,
             "error": str(e)
         }
+
+
+
+@app.get("/orders")
+def get_orders():
+
+    try:
+
+        orders = list(
+            orders_collection.find().sort("createdAt", -1)
+        )
+
+        for order in orders:
+            order["_id"] = str(order["_id"])
+
+        return {
+            "success": True,
+            "orders": orders
+        }
+
+    except Exception as e:
+
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+    class UpdateStatusData(BaseModel):
+        order_id: str
+        orderStatus: str
+
+    @app.put("/update-order-status")
+    def update_order_status(data: UpdateStatusData):
+
+        try:
+
+            from bson import ObjectId
+
+            orders_collection.update_one(
+                {"_id": ObjectId(data.order_id)},
+                {
+                    "$set": {
+                        "orderStatus": data.orderStatus
+                    }
+                }
+            )
+
+            return {
+                "success": True,
+                "message": "Status updated"
+            }
+
+        except Exception as e:
+
+            return {
+                "success": False,
+                "error": str(e)
+            }
