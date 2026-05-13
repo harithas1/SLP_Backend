@@ -7,7 +7,10 @@ import razorpay
 import os
 import hmac
 import hashlib
+from database import orders_collection
+from models.order import SaveOrderData
 
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -102,6 +105,54 @@ def verify_payment(data: VerifyData):
         }
 
     except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# =========================
+# SAVE ORDER
+# =========================
+
+@app.post("/save-order")
+def save_order(data: SaveOrderData):
+
+    try:
+
+        order_data = {
+            "customer": data.customer.dict(),
+
+            "products": [
+                product.dict()
+                for product in data.products
+            ],
+
+            "totalAmount": data.totalAmount,
+
+            "paymentDetails": {
+                "razorpay_order_id": data.razorpay_order_id,
+                "razorpay_payment_id": data.razorpay_payment_id,
+                "razorpay_signature": data.razorpay_signature,
+            },
+
+            "paymentStatus": "Paid",
+
+            "orderStatus": "Pending",
+
+            "createdAt": datetime.utcnow()
+        }
+
+        result = orders_collection.insert_one(order_data)
+
+        return {
+            "success": True,
+            "message": "Order saved successfully",
+            "order_id": str(result.inserted_id)
+        }
+
+    except Exception as e:
+
         return {
             "success": False,
             "error": str(e)
