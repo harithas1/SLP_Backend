@@ -215,3 +215,42 @@ def update_order_status(data: UpdateStatusData):
             "success": False,
             "error": str(e)
         }
+
+
+
+
+
+class TrackOrderData(BaseModel):
+    order_id: str
+    phone: str
+
+
+@app.post("/track-order")
+def track_order(data: TrackOrderData):
+
+    try:
+
+        order = orders_collection.find_one({
+            "_id": ObjectId(data.order_id),
+            "customer.phone": data.phone
+        })
+
+        if not order:
+            return {
+                "success": False,
+                "message": "Order not found"
+            }
+
+        order["_id"] = str(order["_id"])
+
+        return {
+            "success": True,
+            "order": order
+        }
+
+    except Exception as e:
+
+        return {
+            "success": False,
+            "error": str(e)
+        }
