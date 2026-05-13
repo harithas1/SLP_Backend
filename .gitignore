@@ -49,3 +49,5 @@ htmlcov/
 # Uploaded files (optional)
 uploads/
 media/
+images/
+app.py

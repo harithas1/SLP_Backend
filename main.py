@@ -21,7 +21,8 @@ app.add_middleware(
         "http://localhost:5173",
         "https://srilakshyapublications.netlify.app",
         "https://srilakshyapublications.in",
-        "https://www.srilakshyapublications.in"
+        "https://www.srilakshyapublications.in",
+        "http://srilakshyapublications.in",
     ],
     allow_credentials=True,
     allow_methods=["*"],
