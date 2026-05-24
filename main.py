@@ -245,7 +245,6 @@ def admin_login(data: AdminLoginData):
         "message": "Admin login successful",
     }
 
-
 # =========================
 # CREATE RAZORPAY ORDER
 # =========================
