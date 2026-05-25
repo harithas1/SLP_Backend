@@ -289,22 +289,38 @@ def verify_razorpay_signature(
 @app.post("/create-order")
 def create_order(data: OrderData):
     try:
-        get_razorpay_credentials()
+        razorpay_key_id = (os.getenv("RAZORPAY_KEY_ID") or "").strip()
+        razorpay_key_secret = (os.getenv("RAZORPAY_KEY_SECRET") or "").strip()
 
-        if data.amount < 1:
-            raise HTTPException(
-                status_code=400,
-                detail="Minimum order amount must be at least ₹1",
-            )
+        if not razorpay_key_id or not razorpay_key_secret:
+            return {
+                "success": False,
+                "message": "Razorpay live keys are not configured in Railway",
+            }
 
-        amount_in_paise = data.amount * 100
+        if not razorpay_key_id.startswith("rzp_live_"):
+            return {
+                "success": False,
+                "message": "Backend is not using Razorpay live key",
+            }
 
-        order = client.order.create(
+        amount_paise = int(data.amount) * 100
+
+        if amount_paise < 100:
+            return {
+                "success": False,
+                "message": "Amount must be at least ₹1",
+            }
+
+        razorpay_client = razorpay.Client(
+            auth=(razorpay_key_id, razorpay_key_secret)
+        )
+
+        order = razorpay_client.order.create(
             {
-                "amount": amount_in_paise,
+                "amount": amount_paise,
                 "currency": "INR",
                 "payment_capture": 1,
-                "receipt": f"slp_{int(time.time())}",
             }
         )
 
@@ -313,15 +329,14 @@ def create_order(data: OrderData):
             "order_id": order["id"],
             "amount": order["amount"],
             "currency": order["currency"],
+            "key_id": razorpay_key_id,
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create Razorpay order: {str(e)}",
-        )
+        return {
+            "success": False,
+            "error": str(e),
+        }
 
 # =========================
 # VERIFY PAYMENT
