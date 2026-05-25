@@ -29,10 +29,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+
         "https://srilakshyapublications.netlify.app",
+
         "https://srilakshyapublications.in",
         "https://www.srilakshyapublications.in",
         "http://srilakshyapublications.in",
+        "http://www.srilakshyapublications.in",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -215,8 +221,15 @@ def admin_login(data: AdminLoginData):
             "message": "Admin username/password not configured in Railway",
         }
 
-    username_ok = hmac.compare_digest(data.username.strip(), admin_username)
-    password_ok = hmac.compare_digest(data.password, admin_password)
+    username_ok = hmac.compare_digest(
+        data.username.strip(),
+        admin_username.strip(),
+    )
+
+    password_ok = hmac.compare_digest(
+        data.password.strip(),
+        admin_password.strip(),
+    )
 
     if not username_ok or not password_ok:
         return {
