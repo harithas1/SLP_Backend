@@ -14,7 +14,7 @@ import base64
 from database import orders_collection
 from models.order import SaveOrderData
 
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -183,13 +183,22 @@ def serialize_order(order):
     order["_id"] = str(order["_id"])
 
     if "createdAt" in order and isinstance(order["createdAt"], datetime):
-        order["createdAt"] = order["createdAt"].isoformat()
+        created_at = order["createdAt"]
+
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
+        order["createdAt"] = created_at.isoformat().replace("+00:00", "Z")
 
     if "updatedAt" in order and isinstance(order["updatedAt"], datetime):
-        order["updatedAt"] = order["updatedAt"].isoformat()
+        updated_at = order["updatedAt"]
+
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+
+        order["updatedAt"] = updated_at.isoformat().replace("+00:00", "Z")
 
     return order
-
 
 # =========================
 # HEALTH
@@ -243,28 +252,76 @@ def admin_login(data: AdminLoginData):
 # CREATE RAZORPAY ORDER
 # =========================
 
+
+
+def get_razorpay_credentials():
+    key_id = os.getenv("RAZORPAY_KEY_ID")
+    key_secret = os.getenv("RAZORPAY_KEY_SECRET")
+
+    if not key_id or not key_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="Razorpay credentials are not configured",
+        )
+
+    return key_id, key_secret
+
+
+def verify_razorpay_signature(
+    razorpay_order_id: str,
+    razorpay_payment_id: str,
+    razorpay_signature: str,
+) -> bool:
+    _, razorpay_secret = get_razorpay_credentials()
+
+    body = f"{razorpay_order_id}|{razorpay_payment_id}"
+
+    expected_signature = hmac.new(
+        razorpay_secret.encode("utf-8"),
+        body.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(expected_signature, razorpay_signature)
+
+
+
 @app.post("/create-order")
 def create_order(data: OrderData):
     try:
+        get_razorpay_credentials()
+
+        if data.amount < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Minimum order amount must be at least ₹1",
+            )
+
+        amount_in_paise = data.amount * 100
+
         order = client.order.create(
             {
-                "amount": data.amount * 100,
+                "amount": amount_in_paise,
                 "currency": "INR",
                 "payment_capture": 1,
+                "receipt": f"slp_{int(time.time())}",
             }
         )
 
         return {
             "success": True,
             "order_id": order["id"],
+            "amount": order["amount"],
+            "currency": order["currency"],
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-        }
-
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create Razorpay order: {str(e)}",
+        )
 
 # =========================
 # VERIFY PAYMENT
@@ -273,48 +330,54 @@ def create_order(data: OrderData):
 @app.post("/verify-payment")
 def verify_payment(data: VerifyData):
     try:
-        razorpay_secret = os.getenv("RAZORPAY_KEY_SECRET")
+        is_valid = verify_razorpay_signature(
+            data.razorpay_order_id,
+            data.razorpay_payment_id,
+            data.razorpay_signature,
+        )
 
-        if not razorpay_secret:
-            return {
-                "success": False,
-                "message": "Razorpay secret is not configured",
-            }
-
-        body = data.razorpay_order_id + "|" + data.razorpay_payment_id
-
-        expected_signature = hmac.new(
-            bytes(razorpay_secret, "utf-8"),
-            bytes(body, "utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-
-        if hmac.compare_digest(expected_signature, data.razorpay_signature):
-            return {
-                "success": True,
-                "message": "Payment verified",
-            }
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid payment signature",
+            )
 
         return {
-            "success": False,
-            "message": "Invalid signature",
+            "success": True,
+            "message": "Payment verified",
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-        }
-
+        raise HTTPException(
+            status_code=500,
+            detail=f"Payment verification failed: {str(e)}",
+        )
 
 # =========================
 # SAVE ORDER
 # PUBLIC
 # =========================
 
+
 @app.post("/save-order")
 def save_order(data: SaveOrderData):
     try:
+        is_valid = verify_razorpay_signature(
+            data.razorpay_order_id,
+            data.razorpay_payment_id,
+            data.razorpay_signature,
+        )
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid payment signature. Order not saved.",
+            )
+
+        now = datetime.now(timezone.utc)
+
         order_data = {
             "customer": data.customer.dict(),
             "products": [product.dict() for product in data.products],
@@ -334,8 +397,8 @@ def save_order(data: SaveOrderData):
             "orderStatus": "Pending",
             "courierTrackingId": "",
 
-            "createdAt": datetime.utcnow(),
-            "updatedAt": datetime.utcnow(),
+            "createdAt": now,
+            "updatedAt": now,
         }
 
         result = orders_collection.insert_one(order_data)
@@ -346,12 +409,13 @@ def save_order(data: SaveOrderData):
             "order_id": str(result.inserted_id),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         return {
             "success": False,
             "error": str(e),
         }
-
 
 # =========================
 # GET ORDERS
@@ -407,8 +471,7 @@ def update_order_status(
             {
                 "$set": {
                     "orderStatus": data.orderStatus,
-                    "updatedAt": datetime.utcnow(),
-                }
+                    "updatedAt": datetime.now(timezone.utc),                }
             },
         )
 
@@ -446,8 +509,7 @@ def update_courier_tracking(
             {
                 "$set": {
                     "courierTrackingId": data.courierTrackingId.strip(),
-                    "updatedAt": datetime.utcnow(),
-                }
+                    "updatedAt": datetime.now(timezone.utc),                }
             },
         )
 
