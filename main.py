@@ -12,7 +12,7 @@ import time
 import base64
 
 from database import orders_collection, products_collection
-from models.order import SaveOrderData, CartItem
+from models.order import SaveOrderData, CartItem, Customer
 from models.product import ProductCreate, ProductUpdate
 from typing import List
 
@@ -58,6 +58,7 @@ client = razorpay.Client(
 
 class OrderData(BaseModel):
     items: List[CartItem]
+    customer: Customer
 
 
 class VerifyData(BaseModel):
@@ -386,7 +387,7 @@ def get_product_by_slug(slug: str):
             "error": str(e),
         }
 
-    
+
 
 # =========================
 # PRODUCTS - ADMIN
@@ -617,8 +618,17 @@ def create_order(data: OrderData):
             "amount": amount_paise,
             "currency": "INR",
             "payment_capture": 1,
+            "receipt": f"SLP-{int(time.time())}",
             "notes": {
                 "source": "Lakshya Publications",
+                "customer_name": data.customer.name[:256],
+                "customer_phone": data.customer.phone[:256],
+                "city": data.customer.city[:256],
+                "state": data.customer.state[:256],
+                "pincode": data.customer.pincode[:256],
+                "product_ids": ",".join(
+                    [str(product["productId"]) for product in order_products]
+                )[:256],
             },
         }
 
