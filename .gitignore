@@ -51,3 +51,4 @@ uploads/
 media/
 images/
 app.py
+cloudinary_urls.csv
