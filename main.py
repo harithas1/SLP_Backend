@@ -11,8 +11,10 @@ import json
 import time
 import base64
 
-from database import orders_collection
-from models.order import SaveOrderData
+from database import orders_collection, products_collection
+from models.order import SaveOrderData, CartItem
+from models.product import ProductCreate, ProductUpdate
+from typing import List
 
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -55,7 +57,7 @@ client = razorpay.Client(
 # =========================
 
 class OrderData(BaseModel):
-    amount: int
+    items: List[CartItem]
 
 
 class VerifyData(BaseModel):
@@ -200,6 +202,73 @@ def serialize_order(order):
 
     return order
 
+
+
+
+def serialize_product(product):
+    product["_id"] = str(product["_id"])
+
+    if "createdAt" in product and isinstance(product["createdAt"], datetime):
+        created_at = product["createdAt"]
+
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
+        product["createdAt"] = created_at.isoformat().replace("+00:00", "Z")
+
+    if "updatedAt" in product and isinstance(product["updatedAt"], datetime):
+        updated_at = product["updatedAt"]
+
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+
+        product["updatedAt"] = updated_at.isoformat().replace("+00:00", "Z")
+
+    return product
+
+
+def calculate_cart_total(items: List[CartItem]):
+    if not items:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    total_amount = 0
+    order_products = []
+
+    for item in items:
+        product = products_collection.find_one(
+            {
+                "id": item.productId,
+                "isActive": {"$ne": False},
+            }
+        )
+
+        if not product:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Product not found: {item.productId}",
+            )
+
+        price = int(product.get("price", 0))
+        postal = int(product.get("postal", 0))
+        quantity = int(item.quantity)
+
+        item_total = (price + postal) * quantity
+        total_amount += item_total
+
+        order_products.append(
+            {
+                "productId": int(product["id"]),
+                "slug": product.get("slug", ""),
+                "title": product.get("title", ""),
+                "price": price,
+                "postal": postal,
+                "quantity": quantity,
+                "image": product.get("image", ""),
+                "itemTotal": item_total,
+            }
+        )
+
+    return total_amount, order_products
 # =========================
 # HEALTH
 # =========================
@@ -247,6 +316,233 @@ def admin_login(data: AdminLoginData):
         "token": token,
         "message": "Admin login successful",
     }
+
+
+
+
+
+
+# =========================
+# PRODUCTS - PUBLIC GET
+# =========================
+
+@app.get("/products")
+def get_products():
+    try:
+        products = list(
+            products_collection.find(
+                {
+                    "isActive": {"$ne": False},
+                    "id": {"$exists": True, "$ne": None},
+                    "slug": {"$exists": True, "$nin": [None, "", "undefined"]},
+                    "title": {"$exists": True, "$ne": ""},
+                    "price": {"$exists": True, "$ne": None},
+                }
+            ).sort("id", 1)
+        )
+
+        return {
+            "success": True,
+            "products": [serialize_product(product) for product in products],
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@app.get("/products/{slug}")
+def get_product_by_slug(slug: str):
+    try:
+        if not slug or slug in ["undefined", "null"]:
+            return {
+                "success": False,
+                "message": "Product not found",
+            }
+
+        product = products_collection.find_one(
+            {
+                "slug": slug,
+                "isActive": {"$ne": False},
+            }
+        )
+
+        if not product:
+            return {
+                "success": False,
+                "message": "Product not found",
+            }
+
+        return {
+            "success": True,
+            "product": serialize_product(product),
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+    
+
+# =========================
+# PRODUCTS - ADMIN
+# =========================
+
+@app.get("/admin/products")
+def get_admin_products(admin=Depends(require_admin)):
+    try:
+        products = list(products_collection.find().sort("id", 1))
+
+        return {
+            "success": True,
+            "products": [serialize_product(product) for product in products],
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@app.post("/products")
+def create_product(
+    data: ProductCreate,
+    admin=Depends(require_admin),
+):
+    try:
+        existing = products_collection.find_one(
+            {
+                "$or": [
+                    {"id": data.id},
+                    {"slug": data.slug},
+                ]
+            }
+        )
+
+        if existing:
+            return {
+                "success": False,
+                "message": "Product ID or slug already exists",
+            }
+
+        now = datetime.now(timezone.utc)
+
+        product_data = data.model_dump()
+        product_data["createdAt"] = now
+        product_data["updatedAt"] = now
+
+        result = products_collection.insert_one(product_data)
+
+        product = products_collection.find_one({"_id": result.inserted_id})
+
+        return {
+            "success": True,
+            "message": "Product created successfully",
+            "product": serialize_product(product),
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@app.put("/products/{product_id}")
+def update_product(
+    product_id: int,
+    data: ProductUpdate,
+    admin=Depends(require_admin),
+):
+    try:
+        existing_product = products_collection.find_one({"id": product_id})
+
+        if not existing_product:
+            return {
+                "success": False,
+                "message": "Product not found",
+            }
+
+        update_data = data.model_dump(exclude_unset=True)
+        if "slug" in update_data:
+            slug_exists = products_collection.find_one(
+                {
+                    "slug": update_data["slug"],
+                    "id": {"$ne": product_id},
+                }
+            )
+
+            if slug_exists:
+                return {
+                    "success": False,
+                    "message": "Slug already exists",
+                }
+
+        if not update_data:
+            return {
+                "success": False,
+                "message": "No data provided to update",
+            }
+
+        update_data["updatedAt"] = datetime.now(timezone.utc)
+
+        products_collection.update_one(
+            {"id": product_id},
+            {"$set": update_data},
+        )
+
+        product = products_collection.find_one({"id": product_id})
+
+        return {
+            "success": True,
+            "message": "Product updated successfully",
+            "product": serialize_product(product),
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+@app.delete("/products/{product_id}")
+def delete_product(
+    product_id: int,
+    admin=Depends(require_admin),
+):
+    try:
+        result = products_collection.update_one(
+            {"id": product_id},
+            {
+                "$set": {
+                    "isActive": False,
+                    "updatedAt": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+        if result.matched_count == 0:
+            return {
+                "success": False,
+                "message": "Product not found",
+            }
+
+        return {
+            "success": True,
+            "message": "Product deleted successfully",
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+        }
 
 # =========================
 # CREATE RAZORPAY ORDER
@@ -304,7 +600,8 @@ def create_order(data: OrderData):
                 "message": "Backend is not using Razorpay live key",
             }
 
-        amount_paise = int(data.amount) * 100
+        total_amount, order_products = calculate_cart_total(data.items)
+        amount_paise = total_amount * 100
 
         if amount_paise < 100:
             return {
@@ -316,13 +613,16 @@ def create_order(data: OrderData):
             auth=(razorpay_key_id, razorpay_key_secret)
         )
 
-        order = razorpay_client.order.create(
-            {
-                "amount": amount_paise,
-                "currency": "INR",
-                "payment_capture": 1,
-            }
-        )
+        order_data = {
+            "amount": amount_paise,
+            "currency": "INR",
+            "payment_capture": 1,
+            "notes": {
+                "source": "Lakshya Publications",
+            },
+        }
+
+        order = razorpay_client.order.create(data=order_data)  # type: ignore[attr-defined]
 
         return {
             "success": True,
@@ -330,13 +630,18 @@ def create_order(data: OrderData):
             "amount": order["amount"],
             "currency": order["currency"],
             "key_id": razorpay_key_id,
+            "totalAmount": total_amount,
+            "products": order_products,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         return {
             "success": False,
             "error": str(e),
         }
+
 
 # =========================
 # VERIFY PAYMENT
@@ -391,12 +696,29 @@ def save_order(data: SaveOrderData):
                 detail="Invalid payment signature. Order not saved.",
             )
 
+        total_amount, order_products = calculate_cart_total(data.items)
+
+        razorpay_key_id, razorpay_key_secret = get_razorpay_credentials()
+
+        razorpay_client = razorpay.Client(
+            auth=(razorpay_key_id, razorpay_key_secret)
+        )
+
+        razorpay_order = razorpay_client.order.fetch(data.razorpay_order_id)  # type: ignore[attr-defined]
+        paid_order_amount = int(razorpay_order.get("amount", 0))
+
+        if paid_order_amount != total_amount * 100:
+            raise HTTPException(
+                status_code=400,
+                detail="Paid amount does not match backend product total.",
+            )
+
         now = datetime.now(timezone.utc)
 
         order_data = {
-            "customer": data.customer.dict(),
-            "products": [product.dict() for product in data.products],
-            "totalAmount": data.totalAmount,
+            "customer":data.customer.model_dump(),
+            "products": order_products,
+            "totalAmount": total_amount,
 
             "razorpay_order_id": data.razorpay_order_id,
             "razorpay_payment_id": data.razorpay_payment_id,
@@ -431,6 +753,8 @@ def save_order(data: SaveOrderData):
             "success": False,
             "error": str(e),
         }
+
+
 
 # =========================
 # GET ORDERS
