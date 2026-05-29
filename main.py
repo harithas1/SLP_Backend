@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from bson import ObjectId
-
+from fastapi.responses import Response
 import razorpay
 import os
 import hmac
@@ -921,3 +921,85 @@ def track_order(data: TrackOrderData):
             "success": False,
             "error": str(e),
         }
+
+
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml():
+    site_url = "https://srilakshyapublications.in"
+
+    static_urls = [
+        {
+            "loc": f"{site_url}/",
+            "changefreq": "daily",
+            "priority": "1.0",
+        },
+        {
+            "loc": f"{site_url}/about",
+            "changefreq": "monthly",
+            "priority": "0.6",
+        },
+        {
+            "loc": f"{site_url}/contact",
+            "changefreq": "monthly",
+            "priority": "0.6",
+        },
+        {
+            "loc": f"{site_url}/track-order",
+            "changefreq": "monthly",
+            "priority": "0.4",
+        },
+        {
+            "loc": f"{site_url}/terms",
+            "changefreq": "yearly",
+            "priority": "0.3",
+        },
+        {
+            "loc": f"{site_url}/privacy-policy",
+            "changefreq": "yearly",
+            "priority": "0.3",
+        },
+        {
+            "loc": f"{site_url}/refund-policy",
+            "changefreq": "yearly",
+            "priority": "0.3",
+        },
+    ]
+
+    products = list(
+        products_collection.find(
+            {
+                "isActive": {"$ne": False},
+                "slug": {"$exists": True, "$nin": [None, "", "undefined"]},
+            }
+        ).sort("id", 1)
+    )
+
+    product_urls = [
+        {
+            "loc": f"{site_url}/product/{product['slug']}",
+            "changefreq": "weekly",
+            "priority": "0.8",
+        }
+        for product in products
+    ]
+
+    all_urls = static_urls + product_urls
+
+    xml_urls = ""
+
+    for item in all_urls:
+        xml_urls += f"""
+  <url>
+    <loc>{item["loc"]}</loc>
+    <changefreq>{item["changefreq"]}</changefreq>
+    <priority>{item["priority"]}</priority>
+  </url>"""
+
+    sitemap = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{xml_urls}
+</urlset>
+"""
+
+    return Response(content=sitemap, media_type="application/xml")
