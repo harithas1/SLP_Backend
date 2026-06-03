@@ -12,7 +12,7 @@ import time
 import base64
 
 from database import orders_collection, products_collection
-from models.order import SaveOrderData, CartItem, Customer
+from models.order import SaveOrderData, CartItem, Customer, normalize_indian_phone
 from models.product import ProductCreate, ProductUpdate
 from typing import List
 
@@ -896,10 +896,12 @@ def track_order(data: TrackOrderData):
                 "message": "Invalid Order ID",
             }
 
+        phone = normalize_indian_phone(data.phone)
+
         order = orders_collection.find_one(
             {
                 "_id": order_object_id,
-                "customer.phone": data.phone,
+                "customer.phone": phone,
             }
         )
 
