@@ -1,3 +1,5 @@
+# main.py
+
 from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -14,7 +16,7 @@ import base64
 from database import orders_collection, products_collection
 from models.order import SaveOrderData, CartItem, Customer, normalize_indian_phone
 from models.product import ProductCreate, ProductUpdate
-from typing import List
+from typing import List, Literal
 
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -56,9 +58,12 @@ client = razorpay.Client(
 # MODELS
 # =========================
 
+
 class OrderData(BaseModel):
     items: List[CartItem]
     customer: Customer
+    shippingMethod: Literal["Postal", "DTDC"]
+
 
 
 class VerifyData(BaseModel):
@@ -228,9 +233,18 @@ def serialize_product(product):
     return product
 
 
-def calculate_cart_total(items: List[CartItem]):
+def calculate_cart_total(
+    items: List[CartItem],
+    shipping_method: str = "Postal",
+):
     if not items:
         raise HTTPException(status_code=400, detail="Cart is empty")
+
+    if shipping_method not in ["Postal", "DTDC"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid shipping method",
+        )
 
     total_amount = 0
     order_products = []
@@ -250,10 +264,15 @@ def calculate_cart_total(items: List[CartItem]):
             )
 
         price = int(product.get("price", 0))
-        postal = int(product.get("postal", 0))
+
+        if shipping_method == "Postal":
+            shipping_charge = int(product.get("postal", 0))
+        else:
+            shipping_charge = int(product.get("dtdc", 0))
+
         quantity = int(item.quantity)
 
-        item_total = (price + postal) * quantity
+        item_total = (price + shipping_charge) * quantity
         total_amount += item_total
 
         order_products.append(
@@ -262,7 +281,10 @@ def calculate_cart_total(items: List[CartItem]):
                 "slug": product.get("slug", ""),
                 "title": product.get("title", ""),
                 "price": price,
-                "postal": postal,
+                "postal": int(product.get("postal", 0)),
+                "dtdc": int(product.get("dtdc", 0)),
+                "shippingMethod": shipping_method,
+                "shippingCharge": shipping_charge,
                 "quantity": quantity,
                 "image": product.get("image", ""),
                 "itemTotal": item_total,
@@ -270,6 +292,9 @@ def calculate_cart_total(items: List[CartItem]):
         )
 
     return total_amount, order_products
+
+
+
 # =========================
 # HEALTH
 # =========================
@@ -601,7 +626,10 @@ def create_order(data: OrderData):
                 "message": "Backend is not using Razorpay live key",
             }
 
-        total_amount, order_products = calculate_cart_total(data.items)
+        total_amount, order_products = calculate_cart_total(
+            data.items,
+            data.shippingMethod,
+        )
         amount_paise = total_amount * 100
 
         if amount_paise < 100:
@@ -706,8 +734,10 @@ def save_order(data: SaveOrderData):
                 detail="Invalid payment signature. Order not saved.",
             )
 
-        total_amount, order_products = calculate_cart_total(data.items)
-
+        total_amount, order_products = calculate_cart_total(
+            data.items,
+            data.shippingMethod,
+        )
         razorpay_key_id, razorpay_key_secret = get_razorpay_credentials()
 
         razorpay_client = razorpay.Client(
@@ -729,7 +759,7 @@ def save_order(data: SaveOrderData):
             "customer":data.customer.model_dump(),
             "products": order_products,
             "totalAmount": total_amount,
-
+            "shippingMethod": data.shippingMethod,
             "razorpay_order_id": data.razorpay_order_id,
             "razorpay_payment_id": data.razorpay_payment_id,
             "razorpay_signature": data.razorpay_signature,

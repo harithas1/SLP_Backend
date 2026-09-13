@@ -1,7 +1,7 @@
 # models/order.py
 
 import re
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -169,6 +169,8 @@ class SaveOrderData(BaseModel):
     customer: Customer
     items: List[CartItem] = Field(..., min_length=1, max_length=20)
 
+    shippingMethod: Literal["Postal", "DTDC"]
+
     razorpay_order_id: str = Field(..., min_length=5, max_length=100)
     razorpay_payment_id: str = Field(..., min_length=5, max_length=100)
     razorpay_signature: str = Field(..., min_length=64, max_length=64)
@@ -206,3 +208,4 @@ class SaveOrderData(BaseModel):
             raise ValueError("Invalid Razorpay signature.")
 
         return value
+
