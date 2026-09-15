@@ -266,10 +266,25 @@ def calculate_cart_total(
         price = int(product.get("price", 0))
 
         if shipping_method == "Postal":
-            shipping_charge = int(product.get("postal", 0))
-        else:
-            shipping_charge = int(product.get("dtdc", 0))
+            shipping_charge = product.get("postal")
 
+            if shipping_charge is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Postal shipping is not available for: {product.get('title', '')}",
+                )
+
+        else:
+            shipping_charge = product.get("dtdc")
+
+            if shipping_charge is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"DTDC shipping is not available for: {product.get('title', '')}",
+                )
+
+        shipping_charge = int(shipping_charge)
+        
         quantity = int(item.quantity)
 
         item_total = (price + shipping_charge) * quantity
@@ -425,6 +440,7 @@ def get_admin_products(admin=Depends(require_admin)):
 
         return {
             "success": True,
+            "products": [serialize_product(product) for product in products],
             "products": [serialize_product(product) for product in products],
         }
 
