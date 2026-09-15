@@ -15,8 +15,8 @@ class ProductCreate(BaseModel):
     discount: int = Field(0, ge=0)
 
     # Shipping charges
-    postal: int = Field(..., ge=0)
-    dtdc: int = Field(..., ge=0)
+    postal: int = Field(None, ge=1)
+    dtdc: int = Field(None, ge=1)
 
     description: str
     image: str
